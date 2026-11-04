@@ -20,6 +20,6 @@ export class Pizza {
         this.id = id;
         this.name = name;
         this.basePrice = basePrice;
-        this.ingredients = Object.freeze([...ingredients]);
+        this.ingredients = [...ingredients];
     }
 }
