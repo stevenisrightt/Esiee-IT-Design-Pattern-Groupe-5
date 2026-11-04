@@ -14,11 +14,28 @@ export class CartItemNotFoundError extends Error {
     }
 }
 
+export interface CartMemento {}
+
+class CartSnapshot implements CartMemento {
+    constructor(readonly items: readonly CartItem[]) {}
+}
+
 export class Cart {
-    private items: CartItem[] = [];
+    private items: readonly CartItem[] = [];
 
     getItems(): readonly CartItem[] {
         return this.items;
+    }
+
+    save(): CartMemento {
+        return new CartSnapshot(this.items);
+    }
+
+    restore(memento: CartMemento): void {
+        if (!(memento instanceof CartSnapshot)) {
+            throw new Error("Ce snapshot ne provient pas d'un panier");
+        }
+        this.items = memento.items;
     }
 
     addItem(pizza: Pizza, size: PizzaSize): CartItem {
