@@ -6,6 +6,12 @@ import { healthRouter } from "@/routes/health";
 import { customPizzaRouter } from "@/routes/custom-pizza";
 import { orderValidationRouter } from "@/routes/order-validation";
 
+import { createPizzeriaRouter } from "@/pizza/pizzeria.routes";
+import { createCartRouter } from "@/cart/cart.routes";
+import { DaMichelePizzeria } from "@/pizza/pizzerias/da-michele.pizzeria";
+import { RossopomodoroPizzeria } from "@/pizza/pizzerias/rossopomodoro.pizzeria";
+import { PizziumPizzeria } from "@/pizza/pizzerias/pizzium.pizzeria";
+
 import {
   DiscountStorage,
   PromoCodeStorage
@@ -27,6 +33,15 @@ export function createApp() {
   // Tes routes US3 et US8
   app.use("/pizzas/custom", customPizzaRouter);
   app.use("/orders/validate", orderValidationRouter);
+
+  // US1 et US6
+  const pizzerias = [
+    new DaMichelePizzeria(),
+    new RossopomodoroPizzeria(),
+    new PizziumPizzeria()
+  ];
+  app.use("/pizzerias", createPizzeriaRouter(pizzerias));
+  app.use("/carts", createCartRouter(pizzerias));
 
   return app;
 }
