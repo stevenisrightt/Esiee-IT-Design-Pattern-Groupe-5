@@ -1,64 +1,53 @@
-import { randomUUID } from "node:crypto";
 import { Pizza, PizzaSize } from "@/pizza/pizza.model";
+import { CartHistory } from "./cart.history";
+import { CartMemento } from "./cart.memento";
 
 export interface CartItem {
-    readonly id: string;
-    readonly pizza: Pizza;
-    readonly size: PizzaSize;
-}
-
-export class CartItemNotFoundError extends Error {
-    constructor(itemId: string) {
-        super(`L'article ${itemId} n'est pas dans le panier`);
-        this.name = "CartItemNotFoundError";
-    }
-}
-
-export interface CartMemento {}
-
-class CartSnapshot implements CartMemento {
-    constructor(readonly items: readonly CartItem[]) {}
+    id: number;
+    pizza: Pizza;
+    size: PizzaSize;
 }
 
 export class Cart {
-    private items: readonly CartItem[] = [];
+    private items: CartItem[] = [];
+    private nextId = 1;
+    private history = new CartHistory();
 
-    getItems(): readonly CartItem[] {
+    getItems(): CartItem[] {
         return this.items;
     }
 
-    save(): CartMemento {
-        return new CartSnapshot(this.items);
+    addItem(pizza: Pizza, size: PizzaSize): void {
+        this.history.push(this.save());
+        this.items.push({ id: this.nextId++, pizza, size });
     }
 
-    restore(memento: CartMemento): void {
-        if (!(memento instanceof CartSnapshot)) {
-            throw new Error("Ce snapshot ne provient pas d'un panier");
-        }
-        this.items = memento.items;
+    removeItem(id: number): void {
+        this.history.push(this.save());
+        this.items = this.items.filter((item) => item.id !== id);
     }
 
-    addItem(pizza: Pizza, size: PizzaSize): CartItem {
-        const item = { id: randomUUID(), pizza, size };
-        this.items = [...this.items, item];
-        return item;
+    changeSize(id: number, size: PizzaSize): void {
+        this.history.push(this.save());
+        const item = this.items.find((item) => item.id === id);
+        if (item) item.size = size;
     }
 
-    removeItem(itemId: string): void {
-        this.findItem(itemId);
-        this.items = this.items.filter((item) => item.id !== itemId);
+    undo(): void {
+        const previous = this.history.undo(this.save());
+        if (previous) this.restore(previous);
     }
 
-    changeSize(itemId: string, size: PizzaSize): void {
-        this.findItem(itemId);
-        this.items = this.items.map((item) =>
-            item.id === itemId ? { ...item, size } : item,
-        );
+    redo(): void {
+        const next = this.history.redo(this.save());
+        if (next) this.restore(next);
     }
 
-    private findItem(itemId: string): CartItem {
-        const item = this.items.find((i) => i.id === itemId);
-        if (!item) throw new CartItemNotFoundError(itemId);
-        return item;
+    private save(): CartMemento {
+        return new CartMemento(this.items);
+    }
+
+    private restore(memento: CartMemento): void {
+        this.items = memento.getItems();
     }
 }
