@@ -301,6 +301,7 @@ export function createCartRouter(
                     case "payment-uncertain":
                         res.status(503).json({
                             orderId: result.orderId,
+                            methodId: result.methodId,
                             error: result.message,
                             paymentOutcome: "uncertain"
                         });
@@ -310,7 +311,16 @@ export function createCartRouter(
                             orderId: result.orderId,
                             error: result.message,
                             paymentOutcome: "accepted",
-                            historyRecorded: false
+                            historyRecorded: false,
+                            payment: result.payment,
+                            retryWithSameRequest: true
+                        });
+                        return;
+                    case "history-conflict":
+                        res.status(409).json({
+                            orderId: result.orderId,
+                            error: result.message,
+                            historyConflict: true
                         });
                         return;
                     case "placed":

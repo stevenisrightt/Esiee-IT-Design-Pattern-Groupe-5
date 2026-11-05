@@ -95,6 +95,22 @@ describe("Payment adapters", () => {
     });
   });
 
+  it("treats unclassified provider failures as an uncertain outcome", async () => {
+    const processor = {
+      chargeCard: vi.fn(async () => {
+        throw new Error("Connection lost after request submission");
+      })
+    };
+
+    await expect(
+      new CardPaymentAdapter(processor).pay(request)
+    ).rejects.toMatchObject({
+      name: "PaymentOutcomeUnknownError",
+      methodId: "card",
+      safeToRetry: false
+    });
+  });
+
   it("provides three distinct simulated methods", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const card = new SimulatedCardProcessor();

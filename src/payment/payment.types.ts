@@ -47,6 +47,17 @@ export class PaymentTechnicalError extends Error {
   }
 }
 
+export class PaymentOutcomeUnknownError extends PaymentTechnicalError {
+  constructor(
+    methodId: string,
+    message: string,
+    options?: ErrorOptions
+  ) {
+    super(methodId, message, false, options);
+    this.name = "PaymentOutcomeUnknownError";
+  }
+}
+
 export interface PaymentAttemptFailure {
   readonly methodId: string;
   readonly message: string;
