@@ -28,10 +28,12 @@ export abstract class Pizzeria {
     }
 
     priceOf(pizzaId: string, size: PizzaSize): number {
-        return this.sizePricing.priceFor(
-            this.findPizza(pizzaId).basePrice,
-            size
-        );
+        return this.priceFor(this.findPizza(pizzaId), size);
+    }
+
+    // Prix d'une pizza du menu ou personnalisée (US6 / US8)
+    priceFor(pizza: Pizza, size: PizzaSize): number {
+        return this.sizePricing.priceFor(pizza.basePrice, size);
     }
 
     // US8 : appliquer les tarifs de l'US1

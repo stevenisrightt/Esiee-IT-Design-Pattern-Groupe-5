@@ -13,14 +13,18 @@ const isRecord = (value: unknown): value is RecordObject =>
   value !== null &&
   !Array.isArray(value);
 
-orderValidationRouter.post("/", (req, res) => {
-  const body: unknown = req.body;
+export interface OrderValidationResponse {
+  status: number;
+  body: unknown;
+}
 
+// Réutilisée par POST /orders/validate et POST /carts/:id/validate
+export function validateOrder(body: unknown): OrderValidationResponse {
   if (!isRecord(body) || !Array.isArray(body.items)) {
-    res.status(400).json({
-      error: "Le champ items doit être un tableau."
-    });
-    return;
+    return {
+      status: 400,
+      body: { error: "Le champ items doit être un tableau." }
+    };
   }
 
   if (
@@ -28,10 +32,12 @@ orderValidationRouter.post("/", (req, res) => {
     typeof body.isRestaurantOpen !== "boolean" ||
     !isRecord(body.stockByItem)
   ) {
-    res.status(400).json({
-      error: "Informations de livraison, d'enseigne ou de stock manquantes."
-    });
-    return;
+    return {
+      status: 400,
+      body: {
+        error: "Informations de livraison, d'enseigne ou de stock manquantes."
+      }
+    };
   }
 
   if (
@@ -47,20 +53,22 @@ orderValidationRouter.post("/", (req, res) => {
       item.quantity < 1
     )
   ) {
-    res.status(400).json({
-      error: "Chaque article doit avoir un nom, un prix et une quantité valides."
-    });
-    return;
+    return {
+      status: 400,
+      body: {
+        error: "Chaque article doit avoir un nom, un prix et une quantité valides."
+      }
+    };
   }
 
   if (
     body.enteredPromoCode !== undefined &&
     typeof body.enteredPromoCode !== "string"
   ) {
-    res.status(400).json({
-      error: "Le code promo doit être une chaîne de caractères."
-    });
-    return;
+    return {
+      status: 400,
+      body: { error: "Le code promo doit être une chaîne de caractères." }
+    };
   }
 
   const items = (
@@ -101,9 +109,17 @@ orderValidationRouter.post("/", (req, res) => {
     stockByItem: body.stockByItem as Record<string, number>
   });
 
-  res.status(validation.valid ? 200 : 422).json({
-    subtotal: order.subtotal(),
-    amountToPay,
-    validation
-  });
+  return {
+    status: validation.valid ? 200 : 422,
+    body: {
+      subtotal: order.subtotal(),
+      amountToPay,
+      validation
+    }
+  };
+}
+
+orderValidationRouter.post("/", (req, res) => {
+  const result = validateOrder(req.body);
+  res.status(result.status).json(result.body);
 });
