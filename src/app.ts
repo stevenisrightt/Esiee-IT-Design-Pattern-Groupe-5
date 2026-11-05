@@ -12,6 +12,12 @@ import { DaMichelePizzeria } from "@/pizza/pizzerias/da-michele.pizzeria";
 import { RossopomodoroPizzeria } from "@/pizza/pizzerias/rossopomodoro.pizzeria";
 import { PizziumPizzeria } from "@/pizza/pizzerias/pizzium.pizzeria";
 
+import { createPaymentRouter } from "@/payment/payment.routes";
+import { createDefaultPaymentOrchestrator } from "@/payment/create-default-payment-orchestrator";
+import { createOrderHistoryRouter } from "@/order-history/order-history.routes";
+import { OrderHistoryService } from "@/order-history/order-history.service";
+import { InMemoryOrderHistoryRepository } from "@/order-history/in-memory-order-history.repository";
+
 import {
   DiscountStorage,
   PromoCodeStorage
@@ -42,6 +48,12 @@ export function createApp() {
   ];
   app.use("/pizzerias", createPizzeriaRouter(pizzerias));
   app.use("/carts", createCartRouter(pizzerias));
+
+  // US4 et US9
+  app.use("/payments", createPaymentRouter(createDefaultPaymentOrchestrator()));
+  app.use("/clients", createOrderHistoryRouter(
+    new OrderHistoryService(new InMemoryOrderHistoryRepository())
+  ));
 
   return app;
 }
