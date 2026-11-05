@@ -1,6 +1,7 @@
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app";
+import { InMemoryOrderHistoryRepository } from "../src/order-history/in-memory-order-history.repository";
 
 describe("US04 and US09 integration in the Express application", () => {
   afterEach(() => {
@@ -183,6 +184,58 @@ describe("US04 and US09 integration in the Express application", () => {
       .send(checkoutRequest);
 
     expect(first.body.order.orderId).toBe(duplicate.body.order.orderId);
+    expect(log).toHaveBeenCalledOnce();
+    expect((await request(app).get("/clients/client-1/orders")).body.orders)
+      .toHaveLength(1);
+  });
+
+  it("retries a failed history save without charging the customer again", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const save = vi.spyOn(InMemoryOrderHistoryRepository.prototype, "save")
+      .mockImplementationOnce(async () => {
+        throw new Error("Temporary history failure");
+      });
+    const app = createApp();
+    const cart = await request(app)
+      .post("/carts")
+      .send({ pizzeriaId: "da-michele" });
+    const cartPath = `/carts/${cart.body.id}`;
+
+    for (let index = 0; index < 3; index++) {
+      await request(app)
+        .post(`${cartPath}/items`)
+        .send({ pizzaId: "margherita", size: "M" })
+        .expect(201);
+    }
+    const checkoutRequest = {
+      clientId: "client-1",
+      idempotencyKey: "retry-history-save",
+      preferredMethodId: "card",
+      isDeliveryZoneSupported: true,
+      isRestaurantOpen: true,
+      stockByItem: { "Margherita (M)": 3 }
+    };
+
+    const first = await request(app)
+      .post(`${cartPath}/checkout`)
+      .send(checkoutRequest)
+      .expect(503);
+    expect(first.body).toMatchObject({
+      paymentOutcome: "accepted",
+      historyRecorded: false,
+      retryWithSameRequest: true,
+      payment: { status: "accepted", methodId: "card" }
+    });
+
+    const retry = await request(app)
+      .post(`${cartPath}/checkout`)
+      .send(checkoutRequest)
+      .expect(201);
+
+    expect(retry.body.order.orderId).toBe(first.body.orderId);
+    expect(retry.body.payment.transactionId)
+      .toBe(first.body.payment.transactionId);
+    expect(save).toHaveBeenCalledTimes(2);
     expect(log).toHaveBeenCalledOnce();
     expect((await request(app).get("/clients/client-1/orders")).body.orders)
       .toHaveLength(1);

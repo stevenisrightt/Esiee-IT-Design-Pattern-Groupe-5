@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { OrderHistoryRepository } from "@/order-history/order-history.repository";
+import {
+  OrderHistoryConflictError,
+  type OrderHistoryRepository
+} from "@/order-history/order-history.repository";
 import type { HistoricalOrder } from "@/order-history/order-history.model";
 import type { PaymentRequest, PaymentResult } from "@/payment/payment.types";
 import {
@@ -89,10 +92,17 @@ export type OrderPlacementResult =
   | {
       readonly kind: "payment-uncertain";
       readonly orderId: string;
+      readonly methodId: string;
       readonly message: string;
     }
   | {
       readonly kind: "history-save-failed";
+      readonly orderId: string;
+      readonly payment: Extract<PaymentResult, { status: "accepted" }>;
+      readonly message: string;
+    }
+  | {
+      readonly kind: "history-conflict";
       readonly orderId: string;
       readonly message: string;
     }
@@ -109,15 +119,26 @@ export class IdempotencyConflictError extends Error {
   }
 }
 
+interface PlacementAttempt {
+  readonly fingerprint: string;
+  readonly result: Promise<OrderPlacementResult>;
+  settledResult?: OrderPlacementResult;
+  historyOrder?: HistoricalOrder;
+  acceptedPayment?: Extract<PaymentResult, { status: "accepted" }>;
+  retryPromise?: Promise<OrderPlacementResult>;
+}
+
+function copyHistoricalOrder(order: HistoricalOrder): HistoricalOrder {
+  return {
+    ...order,
+    createdAt: new Date(order.createdAt),
+    items: order.items.map(item => ({ ...item }))
+  };
+}
+
 export class OrderPlacementService {
-  private readonly attempts = new Map<
-    string,
-    { fingerprint: string; result: Promise<OrderPlacementResult> }
-  >();
-  private readonly cartAttempts = new Map<
-    string,
-    { fingerprint: string; result: Promise<OrderPlacementResult> }
-  >();
+  private readonly attempts = new Map<string, PlacementAttempt>();
+  private readonly cartAttempts = new Map<string, PlacementAttempt>();
 
   constructor(
     private readonly validator: OrderValidator,
@@ -126,7 +147,7 @@ export class OrderPlacementService {
   ) {}
 
   placeOrder(request: CartCheckoutRequest): Promise<OrderPlacementResult> {
-    const key = `${request.clientId}\u0000${request.idempotencyKey}`;
+    const key = request.idempotencyKey;
     const fingerprint = this.fingerprint(request);
     const existing = this.attempts.get(key);
 
@@ -135,7 +156,7 @@ export class OrderPlacementService {
         throw new IdempotencyConflictError();
       }
 
-      return existing.result;
+      return this.replayAttempt(existing);
     }
 
     const activeCartAttempt = this.cartAttempts.get(request.cartId);
@@ -145,20 +166,22 @@ export class OrderPlacementService {
       }
 
       this.attempts.set(key, activeCartAttempt);
-      return activeCartAttempt.result;
+      return this.replayAttempt(activeCartAttempt);
     }
 
-    let result: Promise<OrderPlacementResult>;
-    result = Promise.resolve()
-      .then(() => this.process(request))
+    let attempt!: PlacementAttempt;
+    const result = Promise.resolve()
+      .then(() => this.process(request, attempt))
       .then(
         placementResult => {
+          attempt.settledResult = placementResult;
           if (
             placementResult.kind !== "placed" &&
             placementResult.kind !== "payment-uncertain" &&
-            placementResult.kind !== "history-save-failed"
+            placementResult.kind !== "history-save-failed" &&
+            placementResult.kind !== "history-conflict"
           ) {
-            if (this.cartAttempts.get(request.cartId)?.result === result) {
+            if (this.cartAttempts.get(request.cartId) === attempt) {
               this.cartAttempts.delete(request.cartId);
             }
           }
@@ -166,21 +189,88 @@ export class OrderPlacementService {
           return placementResult;
         },
         error => {
-          if (this.cartAttempts.get(request.cartId)?.result === result) {
+          if (this.cartAttempts.get(request.cartId) === attempt) {
             this.cartAttempts.delete(request.cartId);
           }
 
           throw error;
         }
       );
-    const attempt = { fingerprint, result };
+    attempt = { fingerprint, result };
     this.cartAttempts.set(request.cartId, attempt);
     this.attempts.set(key, attempt);
     return result;
   }
 
+  private replayAttempt(
+    attempt: PlacementAttempt
+  ): Promise<OrderPlacementResult> {
+    if (attempt.settledResult?.kind === "history-save-failed") {
+      if (attempt.retryPromise) {
+        return attempt.retryPromise;
+      }
+
+      const retry = this.saveAcceptedOrder(attempt).then(result => {
+        attempt.settledResult = result;
+        delete attempt.retryPromise;
+        return result;
+      }, error => {
+        delete attempt.retryPromise;
+        throw error;
+      });
+      attempt.retryPromise = retry;
+      return retry;
+    }
+
+    if (attempt.settledResult) {
+      return Promise.resolve(attempt.settledResult);
+    }
+
+    return attempt.result;
+  }
+
+  private async saveAcceptedOrder(
+    attempt: PlacementAttempt
+  ): Promise<OrderPlacementResult> {
+    const order = attempt.historyOrder;
+    const payment = attempt.acceptedPayment;
+    if (!order || !payment) {
+      throw new Error(
+        "Impossible de reprendre l'historique sans commande payée en mémoire."
+      );
+    }
+
+    try {
+      await this.history.save(copyHistoricalOrder(order));
+    } catch (error) {
+      if (error instanceof OrderHistoryConflictError) {
+        return {
+          kind: "history-conflict",
+          orderId: order.orderId,
+          message: error.message
+        };
+      }
+
+      return {
+        kind: "history-save-failed",
+        orderId: order.orderId,
+        payment,
+        message: error instanceof Error
+          ? error.message
+          : "Le paiement est accepté, mais l'historique n'a pas pu être enregistré."
+      };
+    }
+
+    return {
+      kind: "placed",
+      order: copyHistoricalOrder(order),
+      payment
+    };
+  }
+
   private async process(
-    request: CartCheckoutRequest
+    request: CartCheckoutRequest,
+    attempt: PlacementAttempt
   ): Promise<OrderPlacementResult> {
     const validation = this.validator.validate({
       ...request.validation,
@@ -244,6 +334,7 @@ export class OrderPlacementService {
         return {
           kind: "payment-uncertain",
           orderId,
+          methodId: error.methodId,
           message: error.message
         };
       }
@@ -251,6 +342,7 @@ export class OrderPlacementService {
       return {
         kind: "payment-uncertain",
         orderId,
+        methodId: "unknown",
         message: "Le résultat du paiement est inconnu; ne réessayez pas avec une nouvelle clé."
       };
     }
@@ -279,23 +371,9 @@ export class OrderPlacementService {
       totalCents: amountCents
     };
 
-    try {
-      await this.history.save(order);
-    } catch (error) {
-      return {
-        kind: "history-save-failed",
-        orderId,
-        message: error instanceof Error
-          ? error.message
-          : "Le paiement est accepté, mais l'historique n'a pas pu être enregistré."
-      };
-    }
-
-    return {
-      kind: "placed",
-      order,
-      payment
-    };
+    attempt.historyOrder = copyHistoricalOrder(order);
+    attempt.acceptedPayment = payment;
+    return this.saveAcceptedOrder(attempt);
   }
 
   private fingerprint(request: CartCheckoutRequest): string {

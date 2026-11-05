@@ -2,6 +2,7 @@ import {
   InvalidPaymentMethodError,
   InvalidPaymentRequestError,
   PaymentMethodsUnavailableError,
+  PaymentOutcomeUnknownError,
   PaymentTechnicalError,
   type PaymentAttemptFailure,
   type PaymentMethod,
@@ -45,20 +46,30 @@ export class PaymentOrchestrator {
           return result;
         }
 
-        throw new Error(`Résultat de paiement invalide pour ${method.id}.`);
+        throw new PaymentOutcomeUnknownError(
+          method.id,
+          `Résultat de paiement invalide pour ${method.id}.`
+        );
       } catch (error) {
-        if (!(error instanceof PaymentTechnicalError)) {
-          throw error;
+        if (error instanceof PaymentTechnicalError) {
+          if (!error.safeToRetry) {
+            throw error;
+          }
+
+          failures.push({
+            methodId: method.id,
+            message: error.message
+          });
+          continue;
         }
 
-        if (!error.safeToRetry) {
-          throw error;
-        }
-
-        failures.push({
-          methodId: method.id,
-          message: error.message
-        });
+        throw new PaymentOutcomeUnknownError(
+          method.id,
+          error instanceof Error
+            ? error.message
+            : "Le résultat du paiement est inconnu.",
+          { cause: error }
+        );
       }
     }
 

@@ -10,13 +10,20 @@ import {
   type ProviderPaymentOutcome,
   type WalletProcessor
 } from "./payment-providers";
-import { PaymentTechnicalError } from "./payment.types";
+import {
+  PaymentOutcomeUnknownError,
+  PaymentTechnicalError
+} from "./payment.types";
 
 function adaptOutcome(
   methodId: string,
   outcome: ProviderPaymentOutcome
 ): PaymentResult {
-  if (outcome.status === "accepted") {
+  if (
+    outcome.status === "accepted" &&
+    typeof outcome.transactionId === "string" &&
+    outcome.transactionId.trim().length > 0
+  ) {
     return {
       status: "accepted",
       methodId,
@@ -24,11 +31,14 @@ function adaptOutcome(
     };
   }
 
-  return {
-    status: "declined",
+  if (outcome.status === "declined" && typeof outcome.reason === "string") {
+    return { status: "declined", methodId, reason: outcome.reason };
+  }
+
+  throw new PaymentOutcomeUnknownError(
     methodId,
-    reason: outcome.reason
-  };
+    `Réponse invalide du prestataire ${methodId}.`
+  );
 }
 
 async function callProvider(
@@ -47,7 +57,17 @@ async function callProvider(
       );
     }
 
-    throw error;
+    if (error instanceof PaymentTechnicalError) {
+      throw error;
+    }
+
+    throw new PaymentOutcomeUnknownError(
+      methodId,
+      error instanceof Error
+        ? error.message
+        : "Le résultat du paiement est inconnu.",
+      { cause: error }
+    );
   }
 }
 

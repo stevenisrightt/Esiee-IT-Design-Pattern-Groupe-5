@@ -129,6 +129,23 @@ describe("PaymentOrchestrator", () => {
     expect(walletPay).not.toHaveBeenCalled();
   });
 
+  it("marks an unclassified provider failure as uncertain without fallback", async () => {
+    const walletPay = vi.fn(async () => accepted("wallet"));
+    const orchestrator = new PaymentOrchestrator([
+      method("card", async () => {
+        throw new Error("Connection lost after submission");
+      }),
+      method("wallet", walletPay)
+    ]);
+
+    await expect(orchestrator.pay(request)).rejects.toMatchObject({
+      name: "PaymentOutcomeUnknownError",
+      methodId: "card",
+      safeToRetry: false
+    });
+    expect(walletPay).not.toHaveBeenCalled();
+  });
+
   it("rejects an unconfigured preferred method without attempting payment", async () => {
     const pay = vi.fn(async () => accepted("card"));
     const orchestrator = new PaymentOrchestrator([method("card", pay)]);
