@@ -2,16 +2,22 @@
 import { describe, expect, it } from "vitest";
 
 import { CustomPizzaService } from "@/pizza/custom-pizza";
+import { AVAILABLE_INGREDIENTS } from "@/pizza/ingredients";
 
-import { CourseSizePricingDemo } from
-  "@/pizza/course-size-pricing.demo";
-
-import { AVAILABLE_INGREDIENTS } from
-  "@/pizza/ingredients";
+import { PizzeriaCustomPricingAdapter } from "@/pizza/pizzeria-custom-pricing.adapter";
+import { DaMichelePizzeria } from "@/pizza/pizzerias/da-michele.pizzeria";
+import { RossopomodoroPizzeria } from "@/pizza/pizzerias/rossopomodoro.pizzeria";
+import { PizziumPizzeria } from "@/pizza/pizzerias/pizzium.pizzeria";
 
 describe("US8 - Pizza personnalisée", () => {
+
+  // US8 reliée aux stratégies de prix de l'US1
   const service = new CustomPizzaService(
-    new CourseSizePricingDemo()
+    new PizzeriaCustomPricingAdapter([
+      new DaMichelePizzeria(),
+      new RossopomodoroPizzeria(),
+      new PizziumPizzeria()
+    ])
   );
 
   it("propose les 6 ingrédients du professeur", () => {
@@ -75,4 +81,5 @@ describe("US8 - Pizza personnalisée", () => {
     expect(item.unitPrice).toBe(6.5);
     expect(item.quantity).toBe(2);
   });
+
 });
