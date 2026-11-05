@@ -1,9 +1,19 @@
-import { Router, type Response } from "express";
+import {
+    Router,
+    type NextFunction,
+    type Request,
+    type Response
+} from "express";
 import { Pizza, PizzaSize } from "@/pizza/pizza.model";
 import { Pizzeria } from "@/pizza/pizzeria";
 import { CustomPizzaService } from "@/pizza/custom-pizza";
 import { PizzeriaCustomPricingAdapter } from "@/pizza/pizzeria-custom-pricing.adapter";
 import { validateOrder } from "@/routes/order-validation";
+import {
+    IdempotencyConflictError,
+    type CartCheckoutRequest,
+    type OrderPlacementPort
+} from "@/orders/order-placement.service";
 import { Cart } from "./cart";
 
 interface StoredCart {
@@ -47,7 +57,18 @@ function isAvailableSize(pizzeria: Pizzeria, size: unknown): size is PizzaSize {
     return pizzeria.availableSizes().includes(size as PizzaSize);
 }
 
-export function createCartRouter(pizzerias: Pizzeria[]): Router {
+type RequestObject = Record<string, unknown>;
+
+function isRequestObject(value: unknown): value is RequestObject {
+    return typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value);
+}
+
+export function createCartRouter(
+    pizzerias: Pizzeria[],
+    orderPlacement?: OrderPlacementPort
+): Router {
     const router = Router();
     const carts = new Map<number, StoredCart>();
     let nextId = 1;
@@ -190,6 +211,125 @@ export function createCartRouter(pizzerias: Pizzeria[]): Router {
         });
         res.status(result.status).json(result.body);
     });
+
+    if (orderPlacement) {
+        router.post("/:id/checkout", async (
+            req: Request,
+            res: Response,
+            next: NextFunction
+        ) => {
+            const routeCartId = typeof req.params.id === "string"
+                ? req.params.id
+                : req.params.id[0] ?? "";
+            const stored = findCart(routeCartId, res);
+            if (!stored) return;
+
+            const body: unknown = req.body;
+            if (
+                !isRequestObject(body) ||
+                typeof body.clientId !== "string" ||
+                !body.clientId.trim() ||
+                typeof body.idempotencyKey !== "string" ||
+                !body.idempotencyKey.trim() ||
+                typeof body.isDeliveryZoneSupported !== "boolean" ||
+                typeof body.isRestaurantOpen !== "boolean" ||
+                !isRequestObject(body.stockByItem) ||
+                (body.enteredPromoCode !== undefined &&
+                    typeof body.enteredPromoCode !== "string") ||
+                (body.preferredMethodId !== undefined &&
+                    typeof body.preferredMethodId !== "string")
+            ) {
+                res.status(400).json({
+                    error: "Les informations client, validation et idempotence sont obligatoires."
+                });
+                return;
+            }
+
+            const validation: CartCheckoutRequest["validation"] = {
+                isDeliveryZoneSupported: body.isDeliveryZoneSupported,
+                isRestaurantOpen: body.isRestaurantOpen,
+                stockByItem: body.stockByItem as Record<string, number>,
+                ...(typeof body.enteredPromoCode === "string"
+                    ? { enteredPromoCode: body.enteredPromoCode }
+                    : {})
+            };
+
+            const checkoutRequest: CartCheckoutRequest = {
+                cartId: String(stored.id),
+                clientId: body.clientId,
+                idempotencyKey: body.idempotencyKey,
+                restaurantId: stored.pizzeria.id,
+                restaurantName: stored.pizzeria.name,
+                items: toItems(stored).map(item => ({
+                    name: item.name,
+                    size: item.size,
+                    quantity: 1,
+                    unitPrice: item.price
+                })),
+                validation,
+                ...(typeof body.preferredMethodId === "string"
+                    ? { preferredMethodId: body.preferredMethodId }
+                    : {})
+            };
+
+            try {
+                const result = await orderPlacement.placeOrder(checkoutRequest);
+
+                switch (result.kind) {
+                    case "validation-failed":
+                        res.status(result.statusCode).json(result.response);
+                        return;
+                    case "payment-declined":
+                        res.status(402).json({
+                            orderId: result.orderId,
+                            payment: result.payment
+                        });
+                        return;
+                    case "invalid-payment-method":
+                        res.status(400).json({
+                            orderId: result.orderId,
+                            error: result.message
+                        });
+                        return;
+                    case "payment-unavailable":
+                        res.status(503).json({
+                            orderId: result.orderId,
+                            error: result.message,
+                            failures: result.failures
+                        });
+                        return;
+                    case "payment-uncertain":
+                        res.status(503).json({
+                            orderId: result.orderId,
+                            error: result.message,
+                            paymentOutcome: "uncertain"
+                        });
+                        return;
+                    case "history-save-failed":
+                        res.status(503).json({
+                            orderId: result.orderId,
+                            error: result.message,
+                            paymentOutcome: "accepted",
+                            historyRecorded: false
+                        });
+                        return;
+                    case "placed":
+                        res.status(201).json({
+                            order: result.order,
+                            payment: result.payment
+                        });
+                        return;
+                }
+            } catch (error) {
+                if (error instanceof IdempotencyConflictError) {
+                    res.status(409).json({ error: error.message });
+                    return;
+                }
+
+                next(error);
+            }
+        });
+    }
 
     return router;
 }

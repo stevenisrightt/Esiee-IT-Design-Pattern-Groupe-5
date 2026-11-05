@@ -13,12 +13,17 @@ import { DaMichelePizzeria } from "@/pizza/pizzerias/da-michele.pizzeria";
 import { RossopomodoroPizzeria } from "@/pizza/pizzerias/rossopomodoro.pizzeria";
 import { PizziumPizzeria } from "@/pizza/pizzerias/pizzium.pizzeria";
 
-import { createPaymentRouter } from "@/payment/payment.routes";
 import { createDefaultPaymentOrchestrator } from "@/payment/create-default-payment-orchestrator";
+import {
+  OrderPlacementService,
+  type CheckoutValidationInput,
+  type CheckoutValidationResult
+} from "@/orders/order-placement.service";
 
 import { createOrderHistoryRouter } from "@/order-history/order-history.routes";
 import { OrderHistoryService } from "@/order-history/order-history.service";
 import { InMemoryOrderHistoryRepository } from "@/order-history/in-memory-order-history.repository";
+import { validateOrder } from "@/routes/order-validation";
 
 import {
   DiscountStorage,
@@ -46,6 +51,43 @@ export function createApp() {
     new PizziumPizzeria()
   ];
 
+  const paymentOrchestrator = createDefaultPaymentOrchestrator();
+  const orderHistoryRepository = new InMemoryOrderHistoryRepository();
+  const orderValidator = {
+    validate(input: CheckoutValidationInput): CheckoutValidationResult {
+      const result = validateOrder(input);
+      const response = result.body;
+
+      if (typeof response !== "object" || response === null) {
+        throw new Error("La validation de commande a retourné une réponse invalide.");
+      }
+
+      const body = response as Record<string, unknown>;
+      const validation = body.validation;
+      const valid =
+        typeof validation === "object" &&
+        validation !== null &&
+        "valid" in validation &&
+        validation.valid === true;
+      const amountToPay =
+        typeof body.amountToPay === "number"
+          ? body.amountToPay
+          : undefined;
+
+      return {
+        statusCode: result.status,
+        valid: result.status === 200 && valid,
+        amountToPay,
+        response
+      };
+    }
+  };
+  const orderPlacement = new OrderPlacementService(
+    orderValidator,
+    paymentOrchestrator,
+    orderHistoryRepository
+  );
+
   // US8 : pizzas personnalisees reliees a l'US1
   app.use(
     "/pizzas/custom",
@@ -66,22 +108,15 @@ export function createApp() {
 
   app.use(
     "/carts",
-    createCartRouter(pizzerias)
+    createCartRouter(pizzerias, orderPlacement)
   );
 
-  // US4 et US9
-  app.use(
-    "/payments",
-    createPaymentRouter(
-      createDefaultPaymentOrchestrator()
-    )
-  );
-
+  // US4 checkout and US9 history use the same in-memory repository.
   app.use(
     "/clients",
     createOrderHistoryRouter(
       new OrderHistoryService(
-        new InMemoryOrderHistoryRepository()
+        orderHistoryRepository
       )
     )
   );
