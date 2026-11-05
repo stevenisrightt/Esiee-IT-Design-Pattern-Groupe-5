@@ -1,3 +1,4 @@
+
 import { Pizza, PizzaSize } from "./pizza.model";
 import { SizePricingStrategy } from "./size-pricing";
 
@@ -29,13 +30,28 @@ export abstract class Pizzeria {
     priceOf(pizzaId: string, size: PizzaSize): number {
         return this.sizePricing.priceFor(
             this.findPizza(pizzaId).basePrice,
-            size,
+            size
         );
     }
 
+    // US8 : appliquer les tarifs de l'US1
+    // aux pizzas personnalisees
+    priceForCustomPizza(
+        basePrice: number,
+        size: PizzaSize
+    ): number {
+        return this.sizePricing.priceFor(basePrice, size);
+    }
+
     private findPizza(pizzaId: string): Pizza {
-        const pizza = this.getMenu().find((p) => p.id === pizzaId);
-        if (!pizza) throw new UnknownPizzaError(this.id, pizzaId);
+        const pizza = this.getMenu().find(
+            (p) => p.id === pizzaId
+        );
+
+        if (!pizza) {
+            throw new UnknownPizzaError(this.id, pizzaId);
+        }
+
         return pizza;
     }
 }
