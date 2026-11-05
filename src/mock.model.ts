@@ -1,4 +1,6 @@
 import { discountStorage } from "@/app";
+import { OrderStatus } from "@/order-history/order-history.model";
+import { OrderStatusListener } from "@/notifications/order-status.listener";
 
 export interface IOrder {
     items: IOrderItem[];
@@ -10,10 +12,31 @@ export interface IOrder {
 export class Order implements IOrder {
     items: OrderItem[];
     enteredPromoCode?: string;
+    status: OrderStatus = "pending";
+    private listeners: OrderStatusListener[] = [];
 
     constructor(items: OrderItem[], enteredPromoCode?: string) {
         this.items = items;
         this.enteredPromoCode = enteredPromoCode;
+    }
+
+    subscribe(listener: OrderStatusListener): void {
+        if (!this.listeners.includes(listener)) {
+            this.listeners.push(listener);
+        }
+    }
+
+    unsubscribe(listener: OrderStatusListener): void {
+        this.listeners = this.listeners.filter((l) => l !== listener);
+    }
+
+    changeStatus(status: OrderStatus): void {
+        if (status === this.status) return;
+
+        this.status = status;
+        for (const listener of this.listeners) {
+            listener.update(status);
+        }
     }
 
     setPromoCode(code: string): void {
