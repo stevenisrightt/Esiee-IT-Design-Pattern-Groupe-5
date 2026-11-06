@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { isOrderStatus } from "./order-history.model";
 import { OrderHistoryService } from "./order-history.service";
+import { OrderHistoryNotFoundError } from "./order-history.repository";
 
 export function createOrderHistoryRouter(
   service: OrderHistoryService
@@ -33,6 +34,41 @@ export function createOrderHistoryRouter(
 
     res.status(200).json({ orders });
   });
+
+  router.patch(
+    "/:clientId/orders/:orderId/status",
+    async (req: Request, res: Response) => {
+      const { clientId, orderId } = req.params;
+      const status = req.body?.status;
+
+      if (
+        typeof clientId !== "string" ||
+        !clientId.trim() ||
+        typeof orderId !== "string" ||
+        !orderId.trim()
+      ) {
+        res.status(400).json({ error: "L'identifiant de la commande est obligatoire." });
+        return;
+      }
+
+      if (typeof status !== "string" || !isOrderStatus(status)) {
+        res.status(400).json({ error: "Statut de commande invalide." });
+        return;
+      }
+
+      try {
+        const order = await service.updateStatus(clientId, orderId, status);
+        res.status(200).json({ order });
+      } catch (error) {
+        if (error instanceof OrderHistoryNotFoundError) {
+          res.status(404).json({ error: error.message });
+          return;
+        }
+
+        throw error;
+      }
+    }
+  );
 
   return router;
 }

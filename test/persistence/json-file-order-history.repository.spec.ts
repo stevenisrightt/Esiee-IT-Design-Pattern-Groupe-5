@@ -1,10 +1,14 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JsonFileOrderHistoryRepository } from "@/order-history/json-file-order-history.repository";
 import type { HistoricalOrder } from "@/order-history/order-history.model";
-import { OrderHistoryConflictError } from "@/order-history/order-history.repository";
+import { JsonFileStore } from "@/persistence/json-file.store";
+import {
+  OrderHistoryConflictError,
+  OrderHistoryNotFoundError
+} from "@/order-history/order-history.repository";
 
 function makeOrder(overrides: Partial<HistoricalOrder> = {}): HistoricalOrder {
   return {
@@ -29,6 +33,7 @@ describe("JsonFileOrderHistoryRepository", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -87,5 +92,57 @@ describe("JsonFileOrderHistoryRepository", () => {
       /JSON invalide/
     );
     expect(await readFile(corrupted, "utf8")).toBe("{ pas du json");
+  });
+
+  it("met à jour le statut successivement en préservant la commande sans doublon", async () => {
+    const repository = await JsonFileOrderHistoryRepository.open(filePath);
+    await repository.save(makeOrder());
+
+    for (const status of ["preparing", "ready", "delivered"] as const) {
+      const updated = await repository.updateStatus("order-1", status);
+      expect(updated).toEqual(makeOrder({ status }));
+      await expect(repository.findByClientId("client-1"))
+        .resolves.toEqual([makeOrder({ status })]);
+    }
+
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toHaveLength(1);
+  });
+
+  it("retourne une erreur explicite quand la commande n'existe pas", async () => {
+    const repository = await JsonFileOrderHistoryRepository.open(filePath);
+
+    await expect(repository.updateStatus("missing", "preparing"))
+      .rejects.toBeInstanceOf(OrderHistoryNotFoundError);
+  });
+
+  it("remonte une erreur d'écriture sans modifier l'état mémoire ou le fichier", async () => {
+    const repository = await JsonFileOrderHistoryRepository.open(filePath);
+    await repository.save(makeOrder());
+    const before = await readFile(filePath, "utf8");
+    vi.spyOn(JsonFileStore.prototype, "writeAll")
+      .mockRejectedValueOnce(new Error("Disque indisponible"));
+
+    await expect(repository.updateStatus("order-1", "preparing"))
+      .rejects.toThrow("Disque indisponible");
+
+    expect(await readFile(filePath, "utf8")).toBe(before);
+    const reopened = await JsonFileOrderHistoryRepository.open(filePath);
+    await expect(reopened.findByClientId("client-1"))
+      .resolves.toEqual([makeOrder()]);
+  });
+
+  it("sérialise deux mises à jour successives et persiste le dernier statut", async () => {
+    const repository = await JsonFileOrderHistoryRepository.open(filePath);
+    await repository.save(makeOrder());
+
+    await Promise.all([
+      repository.updateStatus("order-1", "preparing"),
+      repository.updateStatus("order-1", "ready")
+    ]);
+
+    const reopened = await JsonFileOrderHistoryRepository.open(filePath);
+    await expect(reopened.findByClientId("client-1"))
+      .resolves.toEqual([makeOrder({ status: "ready" })]);
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toHaveLength(1);
   });
 });

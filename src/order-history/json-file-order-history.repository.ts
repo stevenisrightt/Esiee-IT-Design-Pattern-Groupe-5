@@ -6,6 +6,7 @@ import {
 } from "./order-history.model";
 import {
   OrderHistoryConflictError,
+  OrderHistoryNotFoundError,
   type OrderHistoryRepository
 } from "./order-history.repository";
 
@@ -103,6 +104,27 @@ export class JsonFileOrderHistoryRepository implements OrderHistoryRepository {
     return [...this.ordersById.values()]
       .filter(order => order.clientId === clientId)
       .map(fromStored);
+  }
+
+  updateStatus(
+    orderId: string,
+    status: OrderStatus
+  ): Promise<HistoricalOrder> {
+    return this.queue.run(async () => {
+      const existing = this.ordersById.get(orderId);
+      if (!existing) {
+        throw new OrderHistoryNotFoundError(orderId);
+      }
+
+      const updated = { ...existing, status };
+      const next = [...this.ordersById.values()].map(order =>
+        order.orderId === orderId ? updated : order
+      );
+
+      await this.store.writeAll(next);
+      this.ordersById.set(orderId, updated);
+      return fromStored(updated);
+    });
   }
 
   save(order: HistoricalOrder): Promise<void> {
