@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Order } from "@/mock.model";
+import { Order } from "@/orders/order.model";
 import {
     EmailListener,
     OrderStatusListener,

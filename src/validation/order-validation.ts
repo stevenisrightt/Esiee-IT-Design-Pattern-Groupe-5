@@ -1,5 +1,5 @@
 
-import type { IOrder } from "@/mock.model";
+import type { IOrder } from "@/orders/order.model";
 
 export interface OrderValidationContext {
   order: IOrder;

@@ -24,23 +24,26 @@ import {
     LoyaltyDiscount,
     PromoCodeDiscount,
 } from "@/pricing/discounts";
-import {
-    DiscountStrategy,
-    PromoCode,
-    DiscountType,
-} from "@/pricing/pricing.model";
+import { PromoCode, DiscountType } from "@/pricing/pricing.model";
+import { InMemoryPromoCodeRepository } from "@/pricing/in-memory-promo-code.repository";
+import { DiscountStorage } from "@/pricing/pricing.storage";
 
 import {
     makeOrder,
     makeCustomer,
     ORDER_SUBTOTAL,
 } from "@test/pricing/order.fixture";
-import { promoCodeStorage } from "@/app";
 
-promoCodeStorage.addPromoCode(
+// Dépendances propres au test, injectées : aucun état global partagé.
+const promoCodes = new InMemoryPromoCodeRepository([
     new PromoCode("PROMO15", DiscountType.Percentage, 15),
-);
-promoCodeStorage.addPromoCode(new PromoCode("PROMO5", DiscountType.Fixed, 5));
+    new PromoCode("PROMO5", DiscountType.Fixed, 5),
+]);
+const discounts = new DiscountStorage([
+    new HappyHourDiscount(),
+    new LoyaltyDiscount(),
+    new PromoCodeDiscount(promoCodes),
+]);
 
 describe("Stratégies de prix", () => {
     beforeEach(() => {
@@ -54,7 +57,7 @@ describe("Stratégies de prix", () => {
 
     it("Standard : applique le prix normal", () => {
         expect(
-            makeOrder().calculateTotalWithDiscount(makeCustomer()),
+            makeOrder().calculateTotalWithDiscount(makeCustomer(), discounts),
         ).toBeCloseTo(ORDER_SUBTOTAL, 2); // 25.00 €
     });
 
@@ -64,7 +67,7 @@ describe("Stratégies de prix", () => {
             console.log("Current time for test:", new Date().toString());
 
             expect(
-                makeOrder().calculateTotalWithDiscount(makeCustomer()),
+                makeOrder().calculateTotalWithDiscount(makeCustomer(), discounts),
             ).toBeCloseTo(ORDER_SUBTOTAL, 2); // 25.00 €
         });
 
@@ -75,7 +78,7 @@ describe("Stratégies de prix", () => {
             const order = makeOrder();
             const customer = makeCustomer();
 
-            expect(order.calculateTotalWithDiscount(customer)).toBeCloseTo(
+            expect(order.calculateTotalWithDiscount(customer, discounts)).toBeCloseTo(
                 20, // 25.00 € - 20 %
                 2,
             );
@@ -88,7 +91,7 @@ describe("Stratégies de prix", () => {
             const customer = makeCustomer();
             order.setPromoCode("INVALID");
 
-            expect(order.calculateTotalWithDiscount(customer)).toBeCloseTo(
+            expect(order.calculateTotalWithDiscount(customer, discounts)).toBeCloseTo(
                 ORDER_SUBTOTAL,
                 2,
             ); // 25.00 €
@@ -99,7 +102,7 @@ describe("Stratégies de prix", () => {
             const customer = makeCustomer();
             order2.setPromoCode("PROMO15");
 
-            expect(order2.calculateTotalWithDiscount(customer)).toBeCloseTo(
+            expect(order2.calculateTotalWithDiscount(customer, discounts)).toBeCloseTo(
                 21.25, // 25.00 € - 15 %
                 2,
             );
@@ -110,7 +113,7 @@ describe("Stratégies de prix", () => {
             const customer = makeCustomer();
             order2.setPromoCode("PROMO5");
 
-            expect(order2.calculateTotalWithDiscount(customer)).toBeCloseTo(
+            expect(order2.calculateTotalWithDiscount(customer, discounts)).toBeCloseTo(
                 20, // 25.00 € - 5 €
                 2,
             );
@@ -126,7 +129,7 @@ describe("Stratégies de prix", () => {
                 { name: "Petit article", unitPrice: 3, quantity: 1 },
             ];
 
-            expect(order2.calculateTotalWithDiscount(customer)).toBeCloseTo(
+            expect(order2.calculateTotalWithDiscount(customer, discounts)).toBeCloseTo(
                 0, // 3.00 € - 5 € => 0 €
                 2,
             );
@@ -139,7 +142,7 @@ describe("Stratégies de prix", () => {
             const customerWithLoyaltyCard = makeCustomer(true);
 
             expect(
-                order.calculateTotalWithDiscount(customerWithLoyaltyCard),
+                order.calculateTotalWithDiscount(customerWithLoyaltyCard, discounts),
             ).toBeCloseTo(22.5, 2); // 25.00 € - 10 %
         });
 
@@ -148,7 +151,7 @@ describe("Stratégies de prix", () => {
             const customerWithoutLoyaltyCard = makeCustomer();
 
             expect(
-                order.calculateTotalWithDiscount(customerWithoutLoyaltyCard),
+                order.calculateTotalWithDiscount(customerWithoutLoyaltyCard, discounts),
             ).toBeCloseTo(ORDER_SUBTOTAL, 2); // 25.00  €
         });
     });

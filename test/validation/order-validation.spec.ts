@@ -1,6 +1,6 @@
 
 import { describe, expect, it } from "vitest";
-import type { IOrder } from "@/mock.model";
+import type { IOrder } from "@/orders/order.model";
 
 import {
   createOrderValidationChain,

@@ -1,6 +1,8 @@
-import { discountStorage } from "@/app";
+import { defaultDiscountStorage } from "@/pricing/default-pricing";
+import type { DiscountStorage } from "@/pricing/pricing.storage";
 import { OrderStatus } from "@/order-history/order-history.model";
 import { OrderStatusListener } from "@/notifications/order-status.listener";
+import type { ICustomer } from "@/customers/customer.model";
 
 export interface IOrder {
     items: IOrderItem[];
@@ -50,10 +52,15 @@ export class Order implements IOrder {
         );
     }
 
-    calculateTotalWithDiscount(customer: ICustomer): number {
+    // Les réductions sont injectables (tests, autre configuration) ; par
+    // défaut, celles assemblées dans default-pricing.ts.
+    calculateTotalWithDiscount(
+        customer: ICustomer,
+        discounts: DiscountStorage = defaultDiscountStorage,
+    ): number {
         let subtotal = this.subtotal();
 
-        for (const discount of discountStorage.getAllDiscountStrategies()) {
+        for (const discount of discounts.getAllDiscountStrategies()) {
             if (discount.appliesTo(this, customer)) {
                 const discountAmount = discount.getDiscount(this, customer);
                 subtotal -= discountAmount;
@@ -80,20 +87,5 @@ export class OrderItem implements IOrderItem {
         this.name = name;
         this.unitPrice = unitPrice;
         this.quantity = quantity;
-    }
-}
-
-export interface ICustomer {
-    name: string;
-    hasLoyaltyCard: boolean;
-}
-
-export class Customer implements ICustomer {
-    name: string;
-    hasLoyaltyCard: boolean;
-
-    constructor(name: string, hasLoyaltyCard: boolean) {
-        this.name = name;
-        this.hasLoyaltyCard = hasLoyaltyCard;
     }
 }

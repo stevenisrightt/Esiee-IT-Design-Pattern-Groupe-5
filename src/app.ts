@@ -22,21 +22,26 @@ import {
 
 import { createOrderHistoryRouter } from "@/order-history/order-history.routes";
 import { OrderHistoryService } from "@/order-history/order-history.service";
-import { InMemoryOrderHistoryRepository } from "@/order-history/in-memory-order-history.repository";
+import { PaymentJournalListener } from "@/payment/payment.listener";
+import {
+  createClientPaymentsRouter,
+  createPaymentMethodsRouter
+} from "@/payment/payment-query.routes";
+import { createPromoCodeRouter } from "@/pricing/promo-code.routes";
+import { defaultPromoCodeRepository } from "@/pricing/default-pricing";
+import {
+  InMemoryStorageFactory,
+  type StorageFactory
+} from "@/persistence/storage.factory";
 import { validateOrder } from "@/routes/order-validation";
 
-import {
-  DiscountStorage,
-  PromoCodeStorage
-} from "@/pricing/pricing.storage";
-
-import {
-  HappyHourDiscount,
-  LoyaltyDiscount,
-  PromoCodeDiscount
-} from "./pricing/discounts";
-
-export function createApp() {
+/**
+ * `storage` (Abstract Factory) choisit la famille de stockage : mémoire par
+ * défaut (tests), fichiers JSON pour le serveur (voir index.ts).
+ */
+export function createApp(
+  storage: StorageFactory = new InMemoryStorageFactory()
+) {
 
   const app = express();
 
@@ -52,7 +57,12 @@ export function createApp() {
   ];
 
   const paymentOrchestrator = createDefaultPaymentOrchestrator();
-  const orderHistoryRepository = new InMemoryOrderHistoryRepository();
+  const paymentRepository = storage.createPaymentRepository();
+  // Observer : chaque paiement terminé est journalisé (persistance US04).
+  paymentOrchestrator.subscribe(
+    new PaymentJournalListener(paymentRepository)
+  );
+  const orderHistoryRepository = storage.createOrderHistoryRepository();
   const orderValidator = {
     validate(input: CheckoutValidationInput): CheckoutValidationResult {
       const result = validateOrder(input);
@@ -111,7 +121,20 @@ export function createApp() {
     createCartRouter(pizzerias, orderPlacement)
   );
 
-  // US4 checkout and US9 history use the same in-memory repository.
+  // US2 : gestion des codes promo utilisés par PromoCodeDiscount
+  app.use(
+    "/promo-codes",
+    createPromoCodeRouter(defaultPromoCodeRepository)
+  );
+
+  // US4 : moyens de paiement disponibles et paiements persistés
+  app.use(
+    "/payment-methods",
+    createPaymentMethodsRouter(() => paymentOrchestrator.availableMethodIds())
+  );
+  app.use("/clients", createClientPaymentsRouter(paymentRepository));
+
+  // US4 checkout and US9 history share the same order history repository.
   app.use(
     "/clients",
     createOrderHistoryRouter(
@@ -123,19 +146,3 @@ export function createApp() {
 
   return app;
 }
-
-// Code d'Andy conserve
-export let promoCodeStorage = new PromoCodeStorage();
-export let discountStorage = new DiscountStorage();
-
-discountStorage.addDiscountStrategy(
-  new HappyHourDiscount()
-);
-
-discountStorage.addDiscountStrategy(
-  new LoyaltyDiscount()
-);
-
-discountStorage.addDiscountStrategy(
-  new PromoCodeDiscount()
-);

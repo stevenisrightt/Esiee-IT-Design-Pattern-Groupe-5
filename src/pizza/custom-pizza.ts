@@ -1,5 +1,5 @@
 
-import type { IOrderItem } from "@/mock.model";
+import type { IOrderItem } from "@/orders/order.model";
 import { findIngredient, type IngredientId } from "./ingredients";
 
 export type PizzaBase = "tomato" | "cream";

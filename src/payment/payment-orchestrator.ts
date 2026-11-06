@@ -9,10 +9,12 @@ import {
   type PaymentRequest,
   type PaymentResult
 } from "./payment.types";
+import type { PaymentListener } from "./payment.listener";
 
 export class PaymentOrchestrator {
   private readonly methodsById: ReadonlyMap<string, PaymentMethod>;
   private readonly configuredMethods: readonly PaymentMethod[];
+  private listeners: PaymentListener[] = [];
 
   constructor(methods: readonly PaymentMethod[]) {
     const methodsById = new Map<string, PaymentMethod>();
@@ -29,6 +31,22 @@ export class PaymentOrchestrator {
     this.methodsById = methodsById;
   }
 
+  /** Identifiants utilisables comme `preferredMethodId`, dans l'ordre de repli. */
+  availableMethodIds(): string[] {
+    return this.configuredMethods.map(method => method.id);
+  }
+
+  // Observer : abonnement des listeners notifiés à chaque paiement terminé.
+  subscribe(listener: PaymentListener): void {
+    if (!this.listeners.includes(listener)) {
+      this.listeners.push(listener);
+    }
+  }
+
+  unsubscribe(listener: PaymentListener): void {
+    this.listeners = this.listeners.filter(l => l !== listener);
+  }
+
   async pay(
     request: PaymentRequest,
     preferredMethodId?: string
@@ -43,6 +61,7 @@ export class PaymentOrchestrator {
         const result = await method.pay(request);
 
         if (result.status === "accepted" || result.status === "declined") {
+          await this.notify(request, result);
           return result;
         }
 
@@ -74,6 +93,26 @@ export class PaymentOrchestrator {
     }
 
     throw new PaymentMethodsUnavailableError(failures);
+  }
+
+  /**
+   * Un listener en échec ne doit pas annuler un paiement déjà effectué :
+   * l'erreur est journalisée et le résultat est quand même renvoyé.
+   */
+  private async notify(
+    request: PaymentRequest,
+    result: PaymentResult
+  ): Promise<void> {
+    for (const listener of this.listeners) {
+      try {
+        await listener.onPaymentCompleted(request, result);
+      } catch (error) {
+        console.error(
+          `[paiement] Un listener a échoué pour la commande ${request.orderId}.`,
+          error
+        );
+      }
+    }
   }
 
   private selectMethods(preferredMethodId?: string): readonly PaymentMethod[] {
