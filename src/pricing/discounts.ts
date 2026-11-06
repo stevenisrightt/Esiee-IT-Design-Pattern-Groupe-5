@@ -1,4 +1,5 @@
-import type { ICustomer, IOrder } from "@/mock.model";
+import type { ICustomer } from "@/customers/customer.model";
+import type { IOrder } from "@/orders/order.model";
 import { type DiscountStrategy, DiscountType } from "./pricing.model";
 import type { PromoCodeRepository } from "./promo-code.repository";
 

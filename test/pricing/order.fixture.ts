@@ -1,4 +1,5 @@
-import { Customer, Order } from "@/mock.model";
+import { Customer } from "@/customers/customer.model";
+import { Order } from "@/orders/order.model";
 
 /**
  * Commande type et client utilisée par tous les tests de stratégies de prix.

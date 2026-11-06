@@ -1,6 +1,7 @@
 
 import { Router } from "express";
-import { Customer, Order, OrderItem } from "@/mock.model";
+import { Customer } from "@/customers/customer.model";
+import { Order, OrderItem } from "@/orders/order.model";
 import { createOrderValidationChain } from "@/validation/order-validation";
 
 export const orderValidationRouter = Router();

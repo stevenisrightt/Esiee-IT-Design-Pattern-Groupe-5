@@ -1,4 +1,5 @@
-import { IOrder, ICustomer } from "@/mock.model";
+import type { ICustomer } from "@/customers/customer.model";
+import type { IOrder } from "@/orders/order.model";
 
 export enum DiscountType {
     Percentage = "percentage",
