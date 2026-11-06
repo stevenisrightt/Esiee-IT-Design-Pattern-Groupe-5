@@ -24,6 +24,12 @@ import { createOrderHistoryRouter } from "@/order-history/order-history.routes";
 import { OrderHistoryService } from "@/order-history/order-history.service";
 import { PaymentJournalListener } from "@/payment/payment.listener";
 import {
+  createClientPaymentsRouter,
+  createPaymentMethodsRouter
+} from "@/payment/payment-query.routes";
+import { createPromoCodeRouter } from "@/pricing/promo-code.routes";
+import { defaultPromoCodeRepository } from "@/pricing/default-pricing";
+import {
   InMemoryStorageFactory,
   type StorageFactory
 } from "@/persistence/storage.factory";
@@ -51,9 +57,10 @@ export function createApp(
   ];
 
   const paymentOrchestrator = createDefaultPaymentOrchestrator();
+  const paymentRepository = storage.createPaymentRepository();
   // Observer : chaque paiement terminé est journalisé (persistance US04).
   paymentOrchestrator.subscribe(
-    new PaymentJournalListener(storage.createPaymentRepository())
+    new PaymentJournalListener(paymentRepository)
   );
   const orderHistoryRepository = storage.createOrderHistoryRepository();
   const orderValidator = {
@@ -113,6 +120,19 @@ export function createApp(
     "/carts",
     createCartRouter(pizzerias, orderPlacement)
   );
+
+  // US2 : gestion des codes promo utilisés par PromoCodeDiscount
+  app.use(
+    "/promo-codes",
+    createPromoCodeRouter(defaultPromoCodeRepository)
+  );
+
+  // US4 : moyens de paiement disponibles et paiements persistés
+  app.use(
+    "/payment-methods",
+    createPaymentMethodsRouter(() => paymentOrchestrator.availableMethodIds())
+  );
+  app.use("/clients", createClientPaymentsRouter(paymentRepository));
 
   // US4 checkout and US9 history share the same order history repository.
   app.use(

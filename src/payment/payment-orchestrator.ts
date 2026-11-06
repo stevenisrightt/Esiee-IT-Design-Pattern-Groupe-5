@@ -31,6 +31,11 @@ export class PaymentOrchestrator {
     this.methodsById = methodsById;
   }
 
+  /** Identifiants utilisables comme `preferredMethodId`, dans l'ordre de repli. */
+  availableMethodIds(): string[] {
+    return this.configuredMethods.map(method => method.id);
+  }
+
   // Observer : abonnement des listeners notifiés à chaque paiement terminé.
   subscribe(listener: PaymentListener): void {
     if (!this.listeners.includes(listener)) {
