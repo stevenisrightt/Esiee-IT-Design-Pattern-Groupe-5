@@ -40,6 +40,7 @@ function createApp() {
     }
   ];
   const app = express();
+  app.use(express.json());
   app.use("/clients", createOrderHistoryRouter(
     new OrderHistoryService(new InMemoryOrderHistoryRepository(orders))
   ));
@@ -87,5 +88,43 @@ describe("Order history route", () => {
 
     expect(response.body.orders.map((item: HistoricalOrder) => item.orderId))
       .toEqual(["other-client-order"]);
+  });
+
+  it("updates an existing order status without creating another history entry", async () => {
+    const app = createApp();
+    const before = await request(app).get("/clients/client-1/orders");
+
+    const updated = await request(app)
+      .patch("/clients/client-1/orders/order-old/status")
+      .send({ status: "preparing" });
+    const after = await request(app).get("/clients/client-1/orders");
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.order).toMatchObject({
+      ...before.body.orders.find((order: HistoricalOrder) =>
+        order.orderId === "order-old"
+      ),
+      status: "preparing"
+    });
+    expect(after.body.orders).toHaveLength(2);
+    expect(after.body.orders.find((order: HistoricalOrder) =>
+      order.orderId === "order-old"
+    ).status).toBe("preparing");
+  });
+
+  it("returns 404 for an order absent from the requested client's history", async () => {
+    const response = await request(createApp())
+      .patch("/clients/client-1/orders/unknown/status")
+      .send({ status: "preparing" });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("rejects an invalid status", async () => {
+    const response = await request(createApp())
+      .patch("/clients/client-1/orders/order-old/status")
+      .send({ status: "in-kitchen" });
+
+    expect(response.status).toBe(400);
   });
 });

@@ -128,4 +128,41 @@ describe("createApp avec la fabrique de stockage JSON (Abstract Factory)", () =>
     expect(response.status).toBe(200);
     expect(JSON.stringify(response.body)).toContain("order-1");
   });
+
+  it("persiste les changements de statut de l'historique à travers le routeur et un redémarrage", async () => {
+    const first = await JsonFileStorageFactory.open(dir);
+    await first.createOrderHistoryRepository().save({
+      orderId: "order-status",
+      clientId: "client-1",
+      createdAt: new Date("2026-11-06T18:30:00.000Z"),
+      status: "confirmed",
+      restaurantName: "Pizzium",
+      items: [{ name: "Napolitaine (M)", quantity: 1, unitPriceCents: 1000 }],
+      totalCents: 1000
+    });
+
+    const app = createApp(await JsonFileStorageFactory.open(dir));
+    for (const status of ["preparing", "ready", "delivered"] as const) {
+      await request(app)
+        .patch(`/clients/client-1/orders/order-status/status`)
+        .send({ status })
+        .expect(200);
+    }
+
+    const restartedApp = createApp(await JsonFileStorageFactory.open(dir));
+    const response = await request(restartedApp)
+      .get("/clients/client-1/orders");
+
+    expect(response.status).toBe(200);
+    expect(response.body.orders).toHaveLength(1);
+    expect(response.body.orders[0]).toMatchObject({
+      orderId: "order-status",
+      clientId: "client-1",
+      createdAt: "2026-11-06T18:30:00.000Z",
+      status: "delivered",
+      restaurantName: "Pizzium",
+      items: [{ name: "Napolitaine (M)", quantity: 1, unitPriceCents: 1000 }],
+      totalCents: 1000
+    });
+  });
 });

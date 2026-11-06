@@ -1,6 +1,10 @@
-import type { HistoricalOrder } from "./order-history.model";
+import type {
+  HistoricalOrder,
+  OrderStatus
+} from "./order-history.model";
 import {
   OrderHistoryConflictError,
+  OrderHistoryNotFoundError,
   type OrderHistoryRepository
 } from "./order-history.repository";
 
@@ -44,6 +48,20 @@ implements OrderHistoryRepository {
     return [...this.ordersById.values()]
       .filter(order => order.clientId === clientId)
       .map(copyOrder);
+  }
+
+  async updateStatus(
+    orderId: string,
+    status: OrderStatus
+  ): Promise<HistoricalOrder> {
+    const existing = this.ordersById.get(orderId);
+    if (!existing) {
+      throw new OrderHistoryNotFoundError(orderId);
+    }
+
+    const updated = { ...existing, status };
+    this.ordersById.set(orderId, copyOrder(updated));
+    return copyOrder(updated);
   }
 
   async save(order: HistoricalOrder): Promise<void> {

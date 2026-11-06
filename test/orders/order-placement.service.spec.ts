@@ -250,6 +250,8 @@ describe("OrderPlacementService", () => {
     let saveCount = 0;
     const history: OrderHistoryRepository = {
       findByClientId: clientId => memoryHistory.findByClientId(clientId),
+      updateStatus: (orderId, status) =>
+        memoryHistory.updateStatus(orderId, status),
       async save(order: HistoricalOrder) {
         saveCount += 1;
         if (saveCount === 1) {
