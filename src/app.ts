@@ -22,7 +22,11 @@ import {
 
 import { createOrderHistoryRouter } from "@/order-history/order-history.routes";
 import { OrderHistoryService } from "@/order-history/order-history.service";
-import { InMemoryOrderHistoryRepository } from "@/order-history/in-memory-order-history.repository";
+import { PaymentJournalListener } from "@/payment/payment.listener";
+import {
+  InMemoryStorageFactory,
+  type StorageFactory
+} from "@/persistence/storage.factory";
 import { validateOrder } from "@/routes/order-validation";
 
 import {
@@ -36,7 +40,13 @@ import {
   PromoCodeDiscount
 } from "./pricing/discounts";
 
-export function createApp() {
+/**
+ * `storage` (Abstract Factory) choisit la famille de stockage : mémoire par
+ * défaut (tests), fichiers JSON pour le serveur (voir index.ts).
+ */
+export function createApp(
+  storage: StorageFactory = new InMemoryStorageFactory()
+) {
 
   const app = express();
 
@@ -52,7 +62,11 @@ export function createApp() {
   ];
 
   const paymentOrchestrator = createDefaultPaymentOrchestrator();
-  const orderHistoryRepository = new InMemoryOrderHistoryRepository();
+  // Observer : chaque paiement terminé est journalisé (persistance US04).
+  paymentOrchestrator.subscribe(
+    new PaymentJournalListener(storage.createPaymentRepository())
+  );
+  const orderHistoryRepository = storage.createOrderHistoryRepository();
   const orderValidator = {
     validate(input: CheckoutValidationInput): CheckoutValidationResult {
       const result = validateOrder(input);
@@ -111,7 +125,7 @@ export function createApp() {
     createCartRouter(pizzerias, orderPlacement)
   );
 
-  // US4 checkout and US9 history use the same in-memory repository.
+  // US4 checkout and US9 history share the same order history repository.
   app.use(
     "/clients",
     createOrderHistoryRouter(
