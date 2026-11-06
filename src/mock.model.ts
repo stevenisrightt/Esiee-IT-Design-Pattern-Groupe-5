@@ -1,4 +1,5 @@
-import { discountStorage } from "@/app";
+import { defaultDiscountStorage } from "@/pricing/default-pricing";
+import type { DiscountStorage } from "@/pricing/pricing.storage";
 import { OrderStatus } from "@/order-history/order-history.model";
 import { OrderStatusListener } from "@/notifications/order-status.listener";
 
@@ -50,10 +51,15 @@ export class Order implements IOrder {
         );
     }
 
-    calculateTotalWithDiscount(customer: ICustomer): number {
+    // Les réductions sont injectables (tests, autre configuration) ; par
+    // défaut, celles assemblées dans default-pricing.ts.
+    calculateTotalWithDiscount(
+        customer: ICustomer,
+        discounts: DiscountStorage = defaultDiscountStorage,
+    ): number {
         let subtotal = this.subtotal();
 
-        for (const discount of discountStorage.getAllDiscountStrategies()) {
+        for (const discount of discounts.getAllDiscountStrategies()) {
             if (discount.appliesTo(this, customer)) {
                 const discountAmount = discount.getDiscount(this, customer);
                 subtotal -= discountAmount;

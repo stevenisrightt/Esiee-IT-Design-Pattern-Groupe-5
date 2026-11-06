@@ -1,6 +1,6 @@
-import { ICustomer, IOrder } from "@/mock.model";
-import { DiscountStrategy, DiscountType, PromoCode } from "./pricing.model";
-import { promoCodeStorage } from "@/app";
+import type { ICustomer, IOrder } from "@/mock.model";
+import { type DiscountStrategy, DiscountType } from "./pricing.model";
+import type { PromoCodeRepository } from "./promo-code.repository";
 
 export class HappyHourDiscount implements DiscountStrategy {
     getPriority(): number {
@@ -34,16 +34,20 @@ export class LoyaltyDiscount implements DiscountStrategy {
 }
 
 export class PromoCodeDiscount implements DiscountStrategy {
+    // Injection par le constructeur : la stratégie ne sait pas où sont
+    // stockés les codes, elle ne connaît que le port PromoCodeRepository.
+    constructor(private readonly promoCodes: PromoCodeRepository) {}
+
     appliesTo(order: IOrder, _: ICustomer): boolean {
         return (
             !!order.enteredPromoCode &&
-            promoCodeStorage.getPromoCode(order.enteredPromoCode) !== undefined
+            this.promoCodes.findByCode(order.enteredPromoCode) !== undefined
         );
     }
     getDiscount(order: IOrder, _: ICustomer): number {
         if (!order.enteredPromoCode) return 0;
 
-        const promoCode = promoCodeStorage.getPromoCode(order.enteredPromoCode);
+        const promoCode = this.promoCodes.findByCode(order.enteredPromoCode);
         if (!promoCode) return 0;
 
         switch (promoCode.type) {
@@ -58,7 +62,7 @@ export class PromoCodeDiscount implements DiscountStrategy {
     getDiscountType(order: IOrder): DiscountType {
         if (!order.enteredPromoCode) return DiscountType.Percentage;
 
-        const promoCode = promoCodeStorage.getPromoCode(order.enteredPromoCode);
+        const promoCode = this.promoCodes.findByCode(order.enteredPromoCode);
         if (!promoCode) return DiscountType.Percentage;
 
         return promoCode.type;

@@ -1,23 +1,14 @@
-import { DiscountStrategy, PromoCode } from "./pricing.model";
-
-export class PromoCodeStorage {
-    private promoCodes: PromoCode[] = [];
-
-    addPromoCode(promoCode: PromoCode): void {
-        this.promoCodes.push(promoCode);
-    }
-
-    getPromoCode(code: string): PromoCode | undefined {
-        return this.promoCodes.find((promo) => promo.code === code);
-    }
-
-    getAllPromoCodes(): PromoCode[] {
-        return this.promoCodes;
-    }
-}
+import type { DiscountStrategy } from "./pricing.model";
 
 export class DiscountStorage {
     private discountStrategies: DiscountStrategy[] = [];
+
+    // Les stratégies sont injectées à la construction (voir default-pricing.ts).
+    constructor(strategies: readonly DiscountStrategy[] = []) {
+        for (const strategy of strategies) {
+            this.addDiscountStrategy(strategy);
+        }
+    }
 
     addDiscountStrategy(strategy: DiscountStrategy): void {
         this.discountStrategies.push(strategy);

@@ -29,17 +29,6 @@ import {
 } from "@/persistence/storage.factory";
 import { validateOrder } from "@/routes/order-validation";
 
-import {
-  DiscountStorage,
-  PromoCodeStorage
-} from "@/pricing/pricing.storage";
-
-import {
-  HappyHourDiscount,
-  LoyaltyDiscount,
-  PromoCodeDiscount
-} from "./pricing/discounts";
-
 /**
  * `storage` (Abstract Factory) choisit la famille de stockage : mémoire par
  * défaut (tests), fichiers JSON pour le serveur (voir index.ts).
@@ -137,19 +126,3 @@ export function createApp(
 
   return app;
 }
-
-// Code d'Andy conserve
-export let promoCodeStorage = new PromoCodeStorage();
-export let discountStorage = new DiscountStorage();
-
-discountStorage.addDiscountStrategy(
-  new HappyHourDiscount()
-);
-
-discountStorage.addDiscountStrategy(
-  new LoyaltyDiscount()
-);
-
-discountStorage.addDiscountStrategy(
-  new PromoCodeDiscount()
-);
