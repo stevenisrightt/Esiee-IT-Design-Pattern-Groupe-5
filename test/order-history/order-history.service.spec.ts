@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InMemoryOrderHistoryRepository } from "../../src/order-history/in-memory-order-history.repository";
 import type {
   HistoricalOrder,
@@ -72,5 +72,42 @@ describe("OrderHistoryService", () => {
     const second = await service.getOrders("client-1");
     expect(second.find(item => item.orderId === first[0].orderId)
       ?.createdAt.getFullYear()).toBe(2026);
+  });
+
+  it("keeps a persisted status change when a listener fails", async () => {
+    const repository = new InMemoryOrderHistoryRepository([
+      order("notify-error", "client-1", "2026-04-01T10:00:00Z", "confirmed")
+    ]);
+    const failedListener = {
+      update: vi.fn(() => {
+        throw new Error("notification failed");
+      })
+    };
+    const nextListener = { update: vi.fn() };
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const service = new OrderHistoryService(
+      repository,
+      [failedListener, nextListener]
+    );
+
+    try {
+      const updated = await service.updateStatus(
+        "client-1",
+        "notify-error",
+        "preparing"
+      );
+
+      expect(updated.status).toBe("preparing");
+      expect(await repository.findByClientId("client-1"))
+        .toContainEqual(expect.objectContaining({
+          orderId: "notify-error",
+          status: "preparing"
+        }));
+      expect(failedListener.update).toHaveBeenCalledOnce();
+      expect(nextListener.update).toHaveBeenCalledOnce();
+      expect(errorLog).toHaveBeenCalledOnce();
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 });

@@ -15,7 +15,7 @@ function createApp() {
       orderId: "order-old",
       clientId: "client-1",
       createdAt: new Date("2026-01-01T10:00:00Z"),
-      status: "delivered",
+      status: "confirmed",
       restaurantName: "Da Michele",
       items: [{ name: "Margherita", quantity: 1, unitPriceCents: 900 }],
       totalCents: 900
@@ -60,7 +60,7 @@ describe("Order history route", () => {
 
   it("filters by a valid status", async () => {
     const response = await request(createApp())
-      .get("/clients/client-1/orders?status=delivered");
+      .get("/clients/client-1/orders?status=confirmed");
 
     expect(response.status).toBe(200);
     expect(response.body.orders.map((item: HistoricalOrder) => item.orderId))
@@ -126,5 +126,13 @@ describe("Order history route", () => {
       .send({ status: "in-kitchen" });
 
     expect(response.status).toBe(400);
+  });
+
+  it("rejects a forbidden status transition", async () => {
+    const response = await request(createApp())
+      .patch("/clients/client-2/orders/other-client-order/status")
+      .send({ status: "preparing" });
+
+    expect(response.status).toBe(409);
   });
 });

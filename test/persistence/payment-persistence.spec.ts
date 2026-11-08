@@ -142,7 +142,12 @@ describe("createApp avec la fabrique de stockage JSON (Abstract Factory)", () =>
     });
 
     const app = createApp(await JsonFileStorageFactory.open(dir));
-    for (const status of ["preparing", "ready", "delivered"] as const) {
+    for (const status of [
+      "preparing",
+      "ready",
+      "out_for_delivery",
+      "delivered"
+    ] as const) {
       await request(app)
         .patch(`/clients/client-1/orders/order-status/status`)
         .send({ status })

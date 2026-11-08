@@ -22,7 +22,7 @@ GET  /clients/:id/orders          historique (US9)
 GET  /clients/:id/payments        paiements enregistrés (US4)
 ```
 
-Autres routes : `GET /pizzerias/:id`, `PATCH|DELETE /carts/:id/items/:itemId`, `POST|GET /promo-codes`, `GET /payment-methods`, `POST /orders/validate`, `POST /pizzas/custom`.
+Autres routes : `GET /pizzerias/:id`, `PATCH|DELETE /carts/:id/items/:itemId`, `POST|GET /promo-codes`, `GET /payment-methods`, `POST /orders/validate`, `POST /pizzas/custom`, `PATCH /clients/:id/orders/:orderId/status`.
 
 ## Design patterns par US
 
@@ -73,6 +73,7 @@ Chaque règle est un `ValidationHandler` (panier non vide, minimum 15 €, zone 
 `Order` est le sujet observé. Les listeners (`EmailListener`, `SmsListener`) implémentent `OrderStatusListener`, et chacun fait son propre `console.log`. `changeStatus()` prévient tous les listeners abonnés.
 - `Order` ne connaît que l'interface : *ajouter un listener ne modifie pas `Order`*.
 - `subscribe()` / `unsubscribe()` : un listener s'active ou se désactive à tout moment.
+- En application, `OrderHistoryService` utilise l'historique comme source de vérité, persiste avant de notifier, puis notifie une projection `Order`. Les transitions sont `pending → confirmed → preparing → ready → out_for_delivery → delivered`; l'annulation est permise jusqu'à `ready`. Une répétition du statut courant ne renotifie pas.
 
 ### US6 – Annuler les modifications · Memento
 
