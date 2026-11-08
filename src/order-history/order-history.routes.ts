@@ -1,6 +1,10 @@
 import { Router, type Request, type Response } from "express";
 import { isOrderStatus } from "./order-history.model";
-import { OrderHistoryService } from "./order-history.service";
+import {
+  OrderHistoryPersistenceError,
+  OrderHistoryService,
+  OrderStatusTransitionError
+} from "./order-history.service";
 import { OrderHistoryNotFoundError } from "./order-history.repository";
 
 export function createOrderHistoryRouter(
@@ -62,6 +66,16 @@ export function createOrderHistoryRouter(
       } catch (error) {
         if (error instanceof OrderHistoryNotFoundError) {
           res.status(404).json({ error: error.message });
+          return;
+        }
+
+        if (error instanceof OrderStatusTransitionError) {
+          res.status(409).json({ error: error.message });
+          return;
+        }
+
+        if (error instanceof OrderHistoryPersistenceError) {
+          res.status(503).json({ error: error.message });
           return;
         }
 

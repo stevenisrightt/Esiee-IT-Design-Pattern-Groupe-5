@@ -120,8 +120,10 @@ export class IdempotencyConflictError extends Error {
 }
 
 interface PlacementAttempt {
+  readonly cartId: string;
   readonly fingerprint: string;
   readonly result: Promise<OrderPlacementResult>;
+  settled: boolean;
   settledResult?: OrderPlacementResult;
   historyOrder?: HistoricalOrder;
   acceptedPayment?: Extract<PaymentResult, { status: "accepted" }>;
@@ -138,7 +140,6 @@ function copyHistoricalOrder(order: HistoricalOrder): HistoricalOrder {
 
 export class OrderPlacementService {
   private readonly attempts = new Map<string, PlacementAttempt>();
-  private readonly cartAttempts = new Map<string, PlacementAttempt>();
 
   constructor(
     private readonly validator: OrderValidator,
@@ -159,13 +160,14 @@ export class OrderPlacementService {
       return this.replayAttempt(existing);
     }
 
-    const activeCartAttempt = this.cartAttempts.get(request.cartId);
+    const activeCartAttempt = [...this.attempts.values()].find(attempt =>
+      attempt.cartId === request.cartId && this.locksCart(attempt)
+    );
     if (activeCartAttempt) {
       if (activeCartAttempt.fingerprint !== fingerprint) {
         throw new IdempotencyConflictError();
       }
 
-      this.attempts.set(key, activeCartAttempt);
       return this.replayAttempt(activeCartAttempt);
     }
 
@@ -174,32 +176,37 @@ export class OrderPlacementService {
       .then(() => this.process(request, attempt))
       .then(
         placementResult => {
+          attempt.settled = true;
           attempt.settledResult = placementResult;
           if (
-            placementResult.kind !== "placed" &&
-            placementResult.kind !== "payment-uncertain" &&
-            placementResult.kind !== "history-save-failed" &&
-            placementResult.kind !== "history-conflict"
+            placementResult.kind === "validation-failed" ||
+            placementResult.kind === "invalid-payment-method" ||
+            placementResult.kind === "payment-unavailable"
           ) {
-            if (this.cartAttempts.get(request.cartId) === attempt) {
-              this.cartAttempts.delete(request.cartId);
-            }
+            this.attempts.delete(key);
           }
-
           return placementResult;
         },
         error => {
-          if (this.cartAttempts.get(request.cartId) === attempt) {
-            this.cartAttempts.delete(request.cartId);
-          }
-
+          attempt.settled = true;
+          this.attempts.delete(key);
           throw error;
         }
       );
-    attempt = { fingerprint, result };
-    this.cartAttempts.set(request.cartId, attempt);
+    attempt = { cartId: request.cartId, fingerprint, result, settled: false };
     this.attempts.set(key, attempt);
     return result;
+  }
+
+  private locksCart(attempt: PlacementAttempt): boolean {
+    if (!attempt.settled) {
+      return true;
+    }
+
+    return attempt.settledResult?.kind === "placed" ||
+      attempt.settledResult?.kind === "payment-uncertain" ||
+      attempt.settledResult?.kind === "history-save-failed" ||
+      attempt.settledResult?.kind === "history-conflict";
   }
 
   private replayAttempt(

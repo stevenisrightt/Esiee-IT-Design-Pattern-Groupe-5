@@ -46,6 +46,10 @@ import {
 import {
   PaymentJournalListener
 } from "@/payment/payment.listener";
+import {
+  EmailListener,
+  SmsListener
+} from "@/notifications/order-status.listener";
 
 import {
   createClientPaymentsRouter,
@@ -208,7 +212,8 @@ export function createApp(
     "/clients",
     createOrderHistoryRouter(
       new OrderHistoryService(
-        orderHistoryRepository
+        orderHistoryRepository,
+        [new EmailListener(), new SmsListener()]
       )
     )
   );

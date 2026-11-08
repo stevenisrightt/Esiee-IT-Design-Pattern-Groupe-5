@@ -114,4 +114,19 @@ describe("US6 - Annuler les modifications (Memento)", () => {
         cart.undo();
         expect(content(cart)).toEqual([]);
     });
+
+    it("restaure le compteur d'identifiants après plusieurs undo/redo", () => {
+        const cart = new Cart();
+        cart.addItem(margherita, PizzaSize.M);
+        cart.addItem(marinara, PizzaSize.S);
+
+        cart.undo();
+        cart.redo();
+        cart.undo();
+        cart.addItem(marinara, PizzaSize.L);
+
+        expect(cart.getItems().map((item) => item.id)).toEqual([1, 2]);
+        expect(new Set(cart.getItems().map((item) => item.id)).size).toBe(2);
+        expect(content(cart)).toEqual(["Margherita M", "Marinara L"]);
+    });
 });

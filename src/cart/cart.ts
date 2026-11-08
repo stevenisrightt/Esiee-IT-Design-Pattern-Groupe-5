@@ -44,10 +44,11 @@ export class Cart {
     }
 
     private save(): CartMemento {
-        return new CartMemento(this.items);
+        return new CartMemento(this.items, this.nextId);
     }
 
     private restore(memento: CartMemento): void {
         this.items = memento.getItems();
+        this.nextId = memento.getNextId();
     }
 }

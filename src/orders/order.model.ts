@@ -14,12 +14,19 @@ export interface IOrder {
 export class Order implements IOrder {
     items: OrderItem[];
     enteredPromoCode?: string;
-    status: OrderStatus = "pending";
+    readonly orderId?: string;
+    status: OrderStatus;
     private listeners: OrderStatusListener[] = [];
 
-    constructor(items: OrderItem[], enteredPromoCode?: string) {
+    constructor(
+        items: OrderItem[],
+        enteredPromoCode?: string,
+        options: { status?: OrderStatus; orderId?: string } = {},
+    ) {
         this.items = items;
         this.enteredPromoCode = enteredPromoCode;
+        this.status = options.status ?? "pending";
+        this.orderId = options.orderId;
     }
 
     subscribe(listener: OrderStatusListener): void {
@@ -36,8 +43,15 @@ export class Order implements IOrder {
         if (status === this.status) return;
 
         this.status = status;
-        for (const listener of this.listeners) {
-            listener.update(status);
+        for (const listener of [...this.listeners]) {
+            try {
+                listener.update(status);
+            } catch (error) {
+                console.error(
+                    `[commande] Un listener a échoué pour la commande ${this.orderId ?? "inconnue"}.`,
+                    error,
+                );
+            }
         }
     }
 
